@@ -2,13 +2,13 @@ name: Generate TV-Garden M3U
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Her gün 00:00'da
+    - cron: '0 0 * * *'  # Her gün 00:00'da (24 saatte bir)
   workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30  # Büyük veri setleri için süre uzatıldı
 
     steps:
     - uses: actions/checkout@v4
@@ -20,14 +20,15 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install requests gzippy urllib3
-        python -c "import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)"
+        pip install requests gzippy emoji urllib3
+        python -c "import urllib3; urllib3.disable_warnings()"
 
     - name: Generate M3U
       run: |
         python tv_garden.py
-        echo "Kanal sayısı: $(grep -c 'EXTINF' tv-garden.m3u)"
-        echo "Dosya boyutu: $(du -h tv-garden.m3u)"
+        echo "Oluşturulan kanal sayısı: $(grep -c 'EXTINF' tv-garden.m3u)"
+        echo "Ülke dağılımı:"
+        grep -o 'group-title="[^"]*"' tv-garden.m3u | sort | uniq -c | sort -nr
 
     - name: Commit and push
       run: |
