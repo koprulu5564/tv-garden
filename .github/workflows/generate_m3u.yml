@@ -2,13 +2,13 @@ name: 🎬 TV-Garden M3U Generator
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Her gün 00:00'da (24 saatte bir)
-  workflow_dispatch:      # Manuel tetikleme
+    - cron: '0 0 * * *'  # Her gün 00:00'da
+  workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45   # Büyük veri setleri için
+    timeout-minutes: 45
 
     steps:
     - name: 🛠️ Repository'yi çek
@@ -23,7 +23,7 @@ jobs:
 
     - name: 📦 Bağımlılıkları yükle
       run: |
-        pip install requests gzippy urllib3
+        pip install requests gzippy urllib3 pycountry
         python -c "import urllib3; urllib3.disable_warnings()"
 
     - name: 🏗️ M3U oluştur
@@ -33,7 +33,7 @@ jobs:
         echo "▸ Kanal Sayısı: $(grep -c 'EXTINF' tv-garden.m3u)"
         echo "▸ Boyut: $(du -h tv-garden.m3u | cut -f1)"
         echo ""
-        echo "🌍 Kategori Özeti:"
+        echo "🌍 Ülke Özeti:"
         grep -o 'group-title="[^"]*"' tv-garden.m3u | sort | uniq -c | sort -nr | head -n 15
 
     - name: 🚀 Değişiklikleri gönder
