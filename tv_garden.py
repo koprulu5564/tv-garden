@@ -1,9 +1,9 @@
 import requests
 import gzip
 import json
-from typing import Dict, List
+from typing import List, Dict
 
-def fetch_compressed_json() -> Dict:
+def fetch_compressed_json() -> bytes:
     """GitHub'dan sıkıştırılmış JSON verisini çeker"""
     url = "https://raw.githubusercontent.com/TVGarden/tv-garden-channel-list/main/channels/compressed/categories/all-channels.json"
     headers = {
@@ -11,51 +11,67 @@ def fetch_compressed_json() -> Dict:
         'Referer': 'https://tv.garden/',
         'Origin': 'https://tv.garden'
     }
-    
     response = requests.get(url, headers=headers, verify=False)
     response.raise_for_status()
-    return gzip.decompress(response.content).decode('utf-8')
+    return response.content
 
-def parse_channels(json_data: str) -> List[Dict]:
+def parse_channels(compressed_data: bytes) -> List[Dict]:
     """JSON verisinden kanal bilgilerini ayrıştırır"""
-    channels = []
-    data = json.loads(json_data)
-    
-    for category in data.get('categories', []):
-        for channel in category.get('channels', []):
-            if channel.get('iptv_urls'):
+    try:
+        # Gzip verisini aç ve JSON'a dönüştür
+        json_data = gzip.decompress(compressed_data).decode('utf-8')
+        data = json.loads(json_data)
+        
+        # JSON yapısını kontrol et
+        if not isinstance(data, list):
+            raise ValueError("Beklenen JSON yapısı list tipinde değil")
+            
+        channels = []
+        for channel in data:
+            if not isinstance(channel, dict):
+                continue
+                
+            # Kanal bilgilerini çıkar
+            name = channel.get('name')
+            urls = channel.get('iptv_urls', [])
+            group = channel.get('group', 'Diğer')
+            
+            if name and urls:
                 channels.append({
-                    'name': channel['name'],
-                    'url': channel['iptv_urls'][0],  # İlk URL'yi al
-                    'group': category['name']  # Ülke/Kategori adı
+                    'name': name,
+                    'url': urls[0],  # İlk geçerli URL
+                    'group': group
                 })
-    return channels
+        return channels
+        
+    except Exception as e:
+        print(f"JSON ayrıştırma hatası: {str(e)}")
+        raise
 
 def generate_m3u(channels: List[Dict]) -> str:
     """M3U playlist oluşturur"""
     m3u_content = ["#EXTM3U"]
-    
     for channel in channels:
-        m3u_content.extend([
-            f'#EXTINF:-1 group-title="{channel["group"]}",{channel["name"]}',
-            channel['url']
-        ])
-    
+        m3u_content.append(f'#EXTINF:-1 group-title="{channel["group"]}",{channel["name"]}')
+        m3u_content.append(channel['url'])
     return '\n'.join(m3u_content)
 
 def main():
     try:
-        # Veriyi çek ve işle
-        json_data = fetch_compressed_json()
-        channels = parse_channels(json_data)
+        print("Veri çekiliyor...")
+        compressed_data = fetch_compressed_json()
         
-        # M3U oluştur ve kaydet
+        print("Kanal bilgileri ayrıştırılıyor...")
+        channels = parse_channels(compressed_data)
+        
+        print(f"Toplam {len(channels)} kanal bulundu")
+        
         with open('tv-garden.m3u', 'w', encoding='utf-8') as f:
             f.write(generate_m3u(channels))
-        
-        print(f"Başarıyla {len(channels)} kanal eklendi!")
+            
+        print("M3U dosyası başarıyla oluşturuldu!")
     except Exception as e:
-        print(f"Hata oluştu: {str(e)}")
+        print(f"Kritik hata: {str(e)}")
         raise
 
 if __name__ == "__main__":
