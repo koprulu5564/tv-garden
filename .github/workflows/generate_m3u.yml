@@ -1,39 +1,45 @@
-name: Generate TV-Garden M3U
+name: 🎬 TV-Garden M3U Generator
 
 on:
   schedule:
     - cron: '0 0 * * *'  # Her gün 00:00'da (24 saatte bir)
-  workflow_dispatch:
+  workflow_dispatch:      # Manuel tetikleme
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Büyük veri setleri için süre uzatıldı
+    timeout-minutes: 45   # Büyük veri setleri için
 
     steps:
-    - uses: actions/checkout@v4
+    - name: 🛠️ Repository'yi çek
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    - name: Set up Python
+    - name: 🐍 Python kurulumu
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
-    - name: Install dependencies
+    - name: 📦 Bağımlılıkları yükle
       run: |
-        pip install requests gzippy emoji urllib3
+        pip install requests gzippy urllib3
         python -c "import urllib3; urllib3.disable_warnings()"
 
-    - name: Generate M3U
+    - name: 🏗️ M3U oluştur
       run: |
         python tv_garden.py
-        echo "Oluşturulan kanal sayısı: $(grep -c 'EXTINF' tv-garden.m3u)"
-        echo "Ülke dağılımı:"
-        grep -o 'group-title="[^"]*"' tv-garden.m3u | sort | uniq -c | sort -nr
+        echo "📊 Dosya Bilgisi:"
+        echo "▸ Kanal Sayısı: $(grep -c 'EXTINF' tv-garden.m3u)"
+        echo "▸ Boyut: $(du -h tv-garden.m3u | cut -f1)"
+        echo ""
+        echo "🌍 Kategori Özeti:"
+        grep -o 'group-title="[^"]*"' tv-garden.m3u | sort | uniq -c | sort -nr | head -n 15
 
-    - name: Commit and push
+    - name: 🚀 Değişiklikleri gönder
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         git add tv-garden.m3u
-        git diff --cached --quiet || git commit -m "Auto: TV-Garden Update $(date +'%Y-%m-%d %H:%M')"
+        git diff --cached --quiet || git commit -m "🔄 Otomatik Güncelleme $(date +'%d.%m.%Y %H:%M')"
         git push
