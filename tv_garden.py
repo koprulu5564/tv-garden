@@ -4,6 +4,7 @@ import json
 from typing import List, Dict
 from collections import defaultdict
 import urllib3
+from pycountry import countries
 
 # SSL uyarılarını kapat
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -20,42 +21,52 @@ def fetch_compressed_json() -> bytes:
     response.raise_for_status()
     return response.content
 
+def get_country_name(country_code: str) -> str:
+    """Ülke kodundan ismini alır (ör: kr -> Güney Kore)"""
+    try:
+        country = countries.get(alpha_2=country_code)
+        return country.name if country else country_code.upper()
+    except:
+        return country_code.upper()
+
 def parse_channels(compressed_data: bytes) -> List[Dict]:
     """JSON verisinden kanal bilgilerini ayrıştırır"""
     try:
-        # Veriyi aç ve JSON'a dönüştür
         json_data = gzip.decompress(compressed_data).decode('utf-8')
         data = json.loads(json_data)
         
         channels = []
-        category_stats = defaultdict(int)
+        country_stats = defaultdict(int)
         
-        # JSON yapısını kontrol et
-        if not isinstance(data, dict) or 'categories' not in data:
-            raise ValueError("Beklenen JSON yapısı bulunamadı!")
-        
-        for category in data['categories']:
-            category_name = category.get('name', 'Diğer')
-            for channel in category.get('channels', []):
-                if channel.get('iptv_urls'):
-                    channels.append({
-                        'name': channel['name'],
-                        'url': channel['iptv_urls'][0],
-                        'group': category_name
-                    })
-                    category_stats[category_name] += 1
+        for channel in data:
+            if not isinstance(channel, dict):
+                continue
+                
+            # Kanal bilgilerini çıkar
+            name = channel.get('name', '').strip()
+            urls = channel.get('iptv_urls', [])
+            country_code = channel.get('country', '').lower()
+            
+            if name and urls:
+                country = get_country_name(country_code) if country_code else 'Diğer'
+                channels.append({
+                    'name': name,
+                    'url': urls[0],
+                    'group': country
+                })
+                country_stats[country] += 1
         
         # İstatistikleri yazdır
-        print("\n⚠️ Kategori Dağılımı:")
-        for category, count in sorted(category_stats.items(), key=lambda x: x[1], reverse=True):
-            print(f"▸ {category}: {count} kanal")
+        print("\n🌍 Ülke Dağılımı:")
+        for country, count in sorted(country_stats.items(), key=lambda x: x[1], reverse=True):
+            print(f"▸ {country}: {count} kanal")
             
         return channels
         
     except Exception as e:
         print(f"\n❌ JSON Ayrıştırma Hatası: {str(e)}")
-        print("ℹ️ JSON yapısını kontrol etmek için:")
-        print(json.dumps(data[:2], indent=2) if 'data' in locals() else "Veri yüklenemedi!")
+        if 'data' in locals():
+            print("ℹ️ JSON Örneği:", json.dumps(data[:2], indent=2))
         raise
 
 def generate_m3u(channels: List[Dict]) -> str:
