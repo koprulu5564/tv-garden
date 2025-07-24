@@ -1,10 +1,12 @@
 import requests
 import gzip
 import json
-import re
-import emoji
 from typing import List, Dict
 from collections import defaultdict
+import urllib3
+
+# SSL uyarılarını kapat
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def fetch_compressed_json() -> bytes:
     """GitHub'dan sıkıştırılmış JSON verisini çeker"""
@@ -14,101 +16,75 @@ def fetch_compressed_json() -> bytes:
         'Referer': 'https://tv.garden/',
         'Origin': 'https://tv.garden'
     }
-    response = requests.get(url, headers=headers, verify=False)
+    response = requests.get(url, headers=headers, verify=False, timeout=30)
     response.raise_for_status()
     return response.content
-
-def flag_to_country(flag_emoji: str) -> str:
-    """Bayrak emojisini ülke ismine çevirir"""
-    try:
-        # Emoji kütüphanesi ile ülke adını al
-        country_name = emoji.demojize(flag_emoji).replace('flag_for_', '').replace('_', ' ').title()
-        return country_name
-    except:
-        return flag_emoji  # Tanımlanamazsa emojiyi olduğu gibi döndür
 
 def parse_channels(compressed_data: bytes) -> List[Dict]:
     """JSON verisinden kanal bilgilerini ayrıştırır"""
     try:
+        # Veriyi aç ve JSON'a dönüştür
         json_data = gzip.decompress(compressed_data).decode('utf-8')
         data = json.loads(json_data)
         
         channels = []
-        country_stats = defaultdict(int)
+        category_stats = defaultdict(int)
         
-        for channel in data:
-            if not isinstance(channel, dict):
-                continue
-                
-            name = channel.get('name', '')
-            urls = channel.get('iptv_urls', [])
-            
-            if name and urls:
-                # Bayrak emojisini bul
-                flag_match = re.match(r'^(\U0001F1E6-\U0001F1FF\s*)', name)
-                country = "Diğer"
-                
-                if flag_match:
-                    flag = flag_match.group(1).strip()
-                    country = flag_to_country(flag)
-                    # Orijinal isimden bayrağı kaldır
-                    name = re.sub(r'^\U0001F1E6-\U0001F1FF\s*', '', name).strip()
-                
-                channels.append({
-                    'name': name,
-                    'url': urls[0],
-                    'group': country
-                })
-                country_stats[country] += 1
+        # JSON yapısını kontrol et
+        if not isinstance(data, dict) or 'categories' not in data:
+            raise ValueError("Beklenen JSON yapısı bulunamadı!")
         
-        # Ülke istatistiklerini yazdır
-        print("\nÜlke Dağılımı:")
-        for country, count in sorted(country_stats.items(), key=lambda x: x[1], reverse=True):
-            print(f"{country}: {count} kanal")
+        for category in data['categories']:
+            category_name = category.get('name', 'Diğer')
+            for channel in category.get('channels', []):
+                if channel.get('iptv_urls'):
+                    channels.append({
+                        'name': channel['name'],
+                        'url': channel['iptv_urls'][0],
+                        'group': category_name
+                    })
+                    category_stats[category_name] += 1
+        
+        # İstatistikleri yazdır
+        print("\n⚠️ Kategori Dağılımı:")
+        for category, count in sorted(category_stats.items(), key=lambda x: x[1], reverse=True):
+            print(f"▸ {category}: {count} kanal")
             
         return channels
         
     except Exception as e:
-        print(f"JSON ayrıştırma hatası: {str(e)}")
+        print(f"\n❌ JSON Ayrıştırma Hatası: {str(e)}")
+        print("ℹ️ JSON yapısını kontrol etmek için:")
+        print(json.dumps(data[:2], indent=2) if 'data' in locals() else "Veri yüklenemedi!")
         raise
 
 def generate_m3u(channels: List[Dict]) -> str:
     """M3U playlist oluşturur"""
-    m3u_content = ["#EXTM3U"]
+    m3u_content = ["#EXTM3U x-tvg-url=\"\""]
     for channel in channels:
-        m3u_content.append(f'#EXTINF:-1 group-title="{channel["group"]}",{channel["name"]}')
-        m3u_content.append(channel['url'])
+        m3u_content.extend([
+            f'#EXTINF:-1 tvg-id="{channel["name"].replace(" ", "_")}" group-title="{channel["group"]}",{channel["name"]}',
+            channel['url']
+        ])
     return '\n'.join(m3u_content)
 
 def main():
     try:
-        print("Veri çekiliyor...")
+        print("🔍 Veri çekiliyor...")
         compressed_data = fetch_compressed_json()
         
-        print("Kanal bilgileri ayrıştırılıyor...")
+        print("🔧 Kanal bilgileri ayrıştırılıyor...")
         channels = parse_channels(compressed_data)
         
-        print(f"\nToplam {len(channels)} kanal bulundu")
+        print(f"\n✅ Toplam {len(channels)} kanal bulundu")
         
         with open('tv-garden.m3u', 'w', encoding='utf-8') as f:
             f.write(generate_m3u(channels))
             
-        print("M3U dosyası başarıyla oluşturuldu!")
+        print("🎉 M3U dosyası başarıyla oluşturuldu!")
     except Exception as e:
-        print(f"\nKritik hata: {str(e)}")
+        print(f"\n🔥 Kritik Hata: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    
-    # Gerekli kütüphaneleri kontrol et
-    try:
-        import emoji
-    except ImportError:
-        print("\nemoji kütüphanesi yükleniyor...")
-        import subprocess
-        subprocess.run(["pip", "install", "emoji"], check=True)
-        import emoji
-    
     main()
